@@ -1,0 +1,170 @@
+---
+title: "cleaning"
+author: "tatum katz"
+date: "2023-09-22"
+output: html_document
+---
+
+# run this script before running the rest of the scripts to make the data cleaned
+
+# libraries
+
+```{r libraries}
+
+  library(tidyverse)
+  library(dplyr)
+  library(ggplot2)
+  library(ggpubr)
+  library(lubridate)
+  library(MASS)
+  library(pROC)
+  library(car)
+  library(cluster)
+  library(factoextra)
+  library(dendextend)
+  library(purrr)
+  library(ggrepel)
+  library(outliers)
+
+```
+
+# data
+
+```{r data}
+
+newnors <- read.csv("KATZ_20230227_For Release.csv")
+
+```
+
+# cleaning of new nors data request "nors"
+
+```{r cleaning}
+
+# select variables of interest
+temp1 <- newnors %>%
+  dplyr::select(cdcid, CAFC_1, grep("IFSACLevel_*", names(.), value=T),
+                yearfirstill, ExposureState, MultiStateExposure, EstimatedPrimary, DeathsNum, DeathsInfo,
+                HospitalNum, HospitalInfo, grep("^Confirmed_*", names(.), value=T), 
+                grep("GenusName_*", names(.), value=T), grep("SpeciesName_*", names(.), value=T), grep("SerotypeName_*", names(.), value=T))
+
+temp1 %>%
+  filter(yearfirstill>=2009) %>% 
+  dim()
+
+# subset to only single etiology outbreaks
+seNors <- temp1 %>% # 2886 / 3042
+    filter(yearfirstill>=2009) %>% 
+    dplyr::filter(GenusName_2=="")
+
+# explore removed data
+removed <- temp1 %>% # multiple etiology outbreaks
+  dplyr::filter(GenusName_2!="")
+
+# find two samples (2014 utah chicken enteritidis and 2016 ny chicken enteritidis) where both etiologies are actually just enteritidis, and add them back to seNors
+addback <- removed %>%
+  dplyr::filter(SerotypeName_1==SerotypeName_2 & 
+                SerotypeName_1!="" & 
+                GenusName_1==GenusName_2 &
+                GenusName_1=="Salmonella") %>% # oh wow it is more than just those two!
+  dplyr::filter(SerotypeName_3!="Muenchen") # all of these, except enteritidis enteritidis muenchen, need to be added back (only one in the list with serotype 3 being muenchen)
+
+# add back those 19 samples with multiple sal serotypes that actually were all the same serotype!
+seNors <- rbind(seNors, addback) #2905/3042
+
+# # more explore removed data
+# removed %>%
+#   dplyr::filter(CAFC_1=="Pork") %>%
+#   dplyr::filter(SerotypeName_1 =="Typhimurium"|SerotypeName_2 =="Typhimurium")
+# 
+# seNors %>%
+#   dplyr::filter(CAFC_1=="Pork") %>%
+#   group_by(SerotypeName_1) %>%
+#   summarize(n=n())
+# 
+# # proportion SE outbreaks
+# nrow(seNors) / nrow(temp1)
+  
+# lengthen dataset so each etiology is an observation instead of an id number. note outbreaks attributable to a second pathogen have been removed
+temp2 <- seNors %>%
+  mutate(etiologyInfo1 = paste(Confirmed_1, GenusName_1, SpeciesName_1, SerotypeName_1, sep="_")) %>%
+  dplyr::select(!c(grep("^Confirmed_*", names(.), value=T), grep("GenusName_*", names(.), value=T), # remove old columns
+                   grep("SpeciesName_*", names(.), value=T), grep("SerotypeName_*", names(.), value=T))) %>%
+  pivot_longer(cols=grep("etiologyInfo*", names(.), value=T), names_to="etiologyNumber", values_to="etiology") %>% # pivot longer by each etiology
+  filter(etiology != "___") %>% # remove observations with no listed etiology ie ___
+  filter(!grepl("^Suspected_", etiology)) %>% # remove observations with non-confirmed etiology
+  separate(col=etiology, c(NA, "genus", "species", "serotype"), "_") %>% # split up etiology back into genus-species and serotype columns
+  unite(col="genusSpecies", c(genus, species), sep=" ") %>%
+  mutate(etiologyNumber = as.numeric(as.factor(etiologyNumber))) # change etiologyNumber to a number
+
+# final cleaning and serotype name fixing, also limit analysis to 2009 (due to differences in data collection)
+nors <- temp2 %>% # 695 out of 2646 obs
+  filter(serotype != "") %>% # remove obs with no serotype
+  filter(CAFC_1 != "") %>% # select only observations for which we have a current analytical food category (CAFC_1)
+  mutate(serotype = gsub("I 4,\\[5\\],12:i:-", "I,4,\\[5\\],12:i:-", serotype), # fix levels of ars sero
+         serotype = gsub("Typhimurium var Cope", "Typhimurium", serotype), 
+         serotype = gsub("Paratyphi B var\\. L\\(\\+\\) tartrate \\+", "ParatyphiB", serotype),
+         serotype = gsub("Paratyphi B", "ParatyphiB", serotype),
+         serotype = gsub("unknown", "Unknown", serotype)) %>%
+  filter(yearfirstill>=2009) # 695 / 1361
+
+for(i in 1:nrow(nors)){   # if CAFC_1 is NA, recode it based on highest IFSAC level (highest level any have is 3)
+  if(nors$CAFC_1[i]=="N/A"){
+    if(nors$IFSACLevel3_1[i]!=""){
+      nors$CAFC_1[i] <- nors$IFSACLevel3_1[i]
+    }else if(nors$IFSACLevel2_1[i]!=""){
+      nors$CAFC_1[i] <- nors$IFSACLevel2_1[i]
+    }else if(nors$IFSACLevel1_1[i] != "Land Animals"){ # could be eggs no way to know at this level, 3 observations, should probably remove
+      nors$CAFC_1[i] <- nors$IFSACLevel1_1[i]
+      }
+  }
+}
+
+nonmeat <- c("Vegetables", "Vegetable Row Crops", "Sprouts", "Seeded Vegetables", "Root/Underground",
+             "Produce", "Plant", "Other Aquatic Animals", "Other", "Oils-Sugars", "Nuts-Seeds",
+             "Mollusks", "Herbs", "Grains-Beans", "Game", "Fungi", "Fruits", "Fish", "Eggs", "Dairy",
+             "Crustaceans", "Aquatic Animals", 
+             "Meat", "Other Meat", "Other Poultry", "Meat-Poultry", "Poultry")# list of non-meat sources for CAFC_1 (only four commodities are "meat")
+
+meatSource <- rep(NA, nrow(nors)) # create vector for storage
+
+for(i in 1:nrow(nors)){ # classify whether the source is meat, not meat, multiple, or NA
+  if(nors$CAFC_1[i] %in% nonmeat){
+    meatSource[i] <- "notmeat"
+  }else if(nors$CAFC_1[i]=="Multiple"){
+    meatSource[i] <- "multiple"
+  }else if(nors$CAFC_1[i]=="N/A"){
+    meatSource[i] <- NA
+  }else(meatSource[i] <- "meat")
+}
+
+nors$meatSource <- meatSource # append meat classification
+
+nors %>%
+  filter(IFSACLevel4_1=="Turkey") %>%
+  dim()
+
+meatNors <- nors %>%
+  dplyr::filter(meatSource=="meat") 
+
+sum(nors$EstimatedPrimary) # 26,240 illnesses
+length(unique(nors$serotype)) # 70 serotypes
+
+sum(meatNors$EstimatedPrimary) # 8524 illnesses (lost 160 illnesses due to weird meat removal)
+nrow(meatNors) # 238 outbreaks with weird meat, 227 without
+length(unique(meatNors$serotype)) # 36 serotypes (lost 4 seros due to weird meat removal)
+
+withoutweirdos <- unique(meatNors$serotype)
+withweirdos <- unique(meatNors$serotype)
+
+```
+
+
+# write out the cleaned data file
+
+```{r write file}
+
+write.csv(nors, "nors.csv", row.names=F)
+
+```
+
+

@@ -1,0 +1,522 @@
+---
+title: "machineLearningApproach"
+author: "tatum katz"
+date: "2023-09-22"
+output: html_document
+---
+
+# run this script after running cleaning.Rmd to perform the AGNES to identify serotypes of greater concern
+
+# libraries
+
+```{r libraries}
+
+  library(tidyverse)
+  library(dplyr)
+  library(ggplot2)
+  library(ggpubr)
+  library(lubridate)
+  library(MASS)
+  library(pROC)
+  library(car)
+  library(cluster)
+  library(factoextra)
+  library(dendextend)
+  library(purrr)
+  library(rpart)
+  library(rpart.plot)
+
+```
+
+# data
+
+```{r data}
+
+nors <- read.csv("nors.csv")
+
+```
+
+# step one: calculate meat outbreaks, illnesses, hospitalizations, deaths
+
+```{r}
+
+propDatDate <- nors %>%
+  filter(meatSource != "multiple") %>% # remove outbreaks caused by multiple CAFC sources
+  drop_na(HospitalInfo, DeathsInfo) %>%
+  group_by(serotype, meatSource, IFSACLevel4_1, yearfirstill) %>% # level 4 gives the commodities we want
+  dplyr::summarize(nOut = n(), # get total number of each event
+            nIll=sum(EstimatedPrimary),
+            nHosp=sum(HospitalNum),nHospInfo=sum(HospitalInfo),
+            nDeath=sum(DeathsNum), nDeathInfo=sum(DeathsInfo)) %>% # spread the data out first
+  pivot_wider(id_cols=c(serotype, IFSACLevel4_1, yearfirstill), # total number of each event, per source, per year (meat, nonmeat, multiple, NA)
+              names_from=c(meatSource),
+              values_from=c(nOut, nIll, nHosp, nHospInfo, nDeath, nDeathInfo)) %>%
+  pivot_wider(id_cols=c(serotype, yearfirstill), # total number of each event, per IFSAC level 4, per year
+              names_from=c(IFSACLevel4_1),
+              values_from=grep("^n", names(.), value=T)) %>%
+  replace(is.na(.),0) %>% # fill all NAs with zero because NA means 0 in this dataset and we want to calculate lots of stuff
+  rowwise() %>%
+  dplyr::mutate( # now calculate the values we want
+          # total trials
+         nOutTotal = sum(c_across(starts_with("nOut_"))), # total number of outbreaks caused by each sero across all sources
+         nIllTotal = sum(c_across(starts_with("nIll_"))), # total number of illnesses caused by each sero across all sources
+         nHospTotal = sum(c_across(starts_with("nHosp_"))), # total number of hospitalizations caused by each sero across all sources
+         nHospInfoTotal = sum(c_across(starts_with("nHospInfo_"))), # total number of cases for which we have hosp data, caused by each sero across all sources
+         nDeathTotal = sum(c_across(starts_with("nDeath_"))), # total number of deaths caused by each sero across all sources
+         nDeathInfoTotal = sum(c_across(starts_with("nDeathInfo_"))), # total number of cases for which we have death data, caused by each sero across all sources
+          # total successes - meatSource (meat)
+         nOutMeat = sum(c_across(starts_with("nOut_meat_"))), # total number of outbreaks caused by each sero from meat sources
+         nIllMeat = sum(c_across(starts_with("nIll_meat_"))), # total number of illnesses caused by each sero from meat sources
+         nHospMeat = sum(c_across(starts_with("nHosp_meat_"))), # total number of hospitalizations caused by each sero from meat sources
+         nHospInfoMeat = sum(c_across(starts_with("nHospInfo_meat_"))), # total number of cases for which we have hosp data, caused by each sero from meat sources
+         nDeathMeat = sum(c_across(starts_with("nDeath_meat_"))), # total number of deaths caused by each sero from meat sources
+         nDeathInfoMeat = sum(c_across(starts_with("nDeathInfo_meat"))), # total number of cases for which we have death data, caused by each sero from meat sources
+          # total successes - beef, chicken, pork, turkey
+         nOutBeef = nOut_meat_Beef, # number of outbreaks caused by each sero from beef
+         nOutChicken = nOut_meat_Chicken, # number of outbreaks caused by each sero from chicken
+         nOutPork = nOut_meat_Pork, # number of outbreaks caused by each sero from pork
+         nOutTurkey = nOut_meat_Turkey, # number of outbreaks caused by each sero from turkey
+         nIllBeef = nIll_meat_Beef, # number of ill caused by each sero from beef
+         nIllChicken = nIll_meat_Chicken, # number of ill caused by each sero from chicken
+         nIllPork = nIll_meat_Pork, # number of ill caused by each sero from pork
+         nIllTurkey = nIll_meat_Turkey, # number of ill caused by each sero from turkey
+         nHospBeef = nHosp_meat_Beef, # number of hosp caused by each sero from beef
+         nHospChicken = nHosp_meat_Chicken, # number of hosp caused by each sero from chicken
+         nHospPork = nHosp_meat_Pork, # number of hosp caused by each sero from pork
+         nHospTurkey = nHosp_meat_Turkey, # number of hosp caused by each sero from turkey
+         ) %>%
+  dplyr::select(!grep("_", names(.), value=T)) # remove necessary columns, basically any column with an _
+
+```
+
+# AGNES
+
+AGNES -> get clusters -> decision tree with clusters as outcome variable -> extract decision rules 
+
+## meat overall
+
+```{r meat overall AGNES}
+
+### prepare data ###
+
+meatDat <- propDatDate %>% 
+  dplyr::select(serotype, yearfirstill, nOutMeat, nIllMeat, nHospMeat) # select training vars
+clustDat <- as.data.frame(meatDat) # convert to dataframe for rownames
+rownames(clustDat) <- paste(clustDat$serotype, clustDat$yearfirstill, sep="-") # so serotypes show up on the tree
+clustDat <- scale(clustDat[,-c(1:2)]) # scale and remove serotype and year cols
+
+### run the analysis ###
+
+# test a few diff methods (all euclidean distance)
+methods <- c("average", "single", "complete", "ward")
+names(methods) <- c("average", "single", "complete", "ward")
+ac <- function(x){ agnes(clustDat, method=x)$ac }
+map_dbl(methods, ac) # closer to 1 means stronger clustering - ward method is strongest
+
+hc1 <- agnes(clustDat, method="ward") # do the analysis
+
+pltree(hc1, cex=0.6, hang=-1) # plot it
+
+### identify clusters ###
+
+fviz_nbclust(clustDat, FUN=hcut, method="wss") # elbow plot to see how many clusters - 2-3 probably
+fviz_nbclust(clustDat, FUN=hcut, method="silhouette") # silhouette plot to see how many clusters - 2 clusters
+
+# lets try out k=2:k=4
+
+hc1k2 <- cutree(hc1, k=2) # k=2
+hc1k3 <- cutree(hc1, k=3) # k=3
+hc1k4 <- cutree(hc1, k=4) # k=4
+
+fviz_cluster(list(data=clustDat, cluster=hc1k2), main="K=2") 
+fviz_cluster(list(data=clustDat, cluster=hc1k3), main="Meat Overall, K=3") 
+fviz_cluster(list(data=clustDat, cluster=hc1k4), main="K=4") 
+
+# need 3 to get enough repetition of serotypes across years, k=2+3 SoC
+pltree(hc1, cex=0.6);rect.hclust(hc1, k=3, border=2:4) # visualize another way
+
+### get clusters and report out: who is of concern? ###
+
+meatDat <- meatDat %>% 
+  plyr::mutate(cluster=factor(as.character(hc1k3)),
+               highrisk = ifelse(cluster %in% c(2,3), 1, 0)) %>%
+  as.data.frame()
+nosinglesmeatdate <- meatDat %>% # identify those who appeared risky in at LEAST two years
+  group_by(serotype, highrisk) %>%
+  dplyr::summarize(n=n()) %>%
+  dplyr::filter(n > 1 & highrisk==1)
+meatDat <- meatDat %>%  # identify seros of concern
+  plyr::mutate(ofconcern=ifelse(serotype %in% unique(nosinglesmeatdate$serotype), 1, 0))
+unique(meatDat$serotype[which(meatDat$ofconcern==1)]) # these are your overall meat seros of concern
+
+### feed output into decision tree ###
+
+dtree <- rpart(cluster ~ nOutMeat + nIllMeat + nHospMeat, data=meatDat)
+
+# plot the tree
+rpart.plot(dtree) 
+
+# examine the tree
+printcp(dtree)
+plotcp(dtree) 
+
+# variable importance
+dtree$variable.importance
+
+# can we re-predict the dataset?
+meatDat$prediction <- predict(dtree, data=meatDat, type="class")
+
+table(meatDat$cluster, meatDat$prediction) # its nearly perfect
+
+# decision rule: classes 2 and 3 SoC:
+# at least two outbreaks
+
+```
+
+## beef
+
+```{r beef AGNES}
+
+### prepare data ###
+
+beefDat <- propDatDate %>% 
+  dplyr::select(serotype, yearfirstill, nOutBeef, nIllBeef, nHospBeef) # select training vars
+clustDat <- as.data.frame(beefDat) # convert to dataframe for rownames
+rownames(clustDat) <- paste(clustDat$serotype, clustDat$yearfirstill, sep="-") # so serotypes show up on the tree
+clustDat <- scale(clustDat[,-c(1:2)]) # scale and remove serotype and year cols
+
+### run the analysis ###
+
+# test a few diff methods (all euclidean distance)
+methods <- c("average", "single", "complete", "ward")
+names(methods) <- c("average", "single", "complete", "ward")
+ac <- function(x){ agnes(clustDat, method=x)$ac }
+map_dbl(methods, ac) # closer to 1 means stronger clustering - ward method is strongest
+
+hc1 <- agnes(clustDat, method="ward") # do the analysis
+
+pltree(hc1, cex=0.6, hang=-1) # plot it
+
+### identify clusters ###
+
+fviz_nbclust(clustDat, FUN=hcut, method="wss") # elbow plot to see how many clusters - 2-3 probably
+fviz_nbclust(clustDat, FUN=hcut, method="silhouette") # silhouette plot to see how many clusters - 2 clusters
+
+# lets try out k=2:k=4
+
+hc1k2 <- cutree(hc1, k=2) # k=2
+hc1k3 <- cutree(hc1, k=3) # k=3
+hc1k4 <- cutree(hc1, k=4) # k=4
+
+fviz_cluster(list(data=clustDat, cluster=hc1k2), main="K=2") 
+fviz_cluster(list(data=clustDat, cluster=hc1k3), main="Beef, K=3") 
+fviz_cluster(list(data=clustDat, cluster=hc1k4), main="K=4") 
+
+# need 3 to get enough repetition of serotypes across years, k=2+3 SoC
+pltree(hc1, cex=0.6);rect.hclust(hc1, k=3, border=2:4) # visualize another way
+
+### get clusters and report out: who is of concern? ###
+
+beefDat <- beefDat %>% 
+  plyr::mutate(cluster=factor(as.character(hc1k3)),
+               highrisk = ifelse(cluster %in% c(2,3), 1, 0)) %>%
+  as.data.frame()
+nosinglesbeef <- beefDat %>% # identify those who appeared risky in at LEAST two years
+  group_by(serotype, highrisk) %>%
+  dplyr::summarize(n=n()) %>%
+  dplyr::filter(n > 1 & highrisk==1)
+beefDat <- beefDat %>%  # identify seros of concern
+  plyr::mutate(ofconcern=ifelse(serotype %in% unique(nosinglesbeef$serotype), 1, 0))
+unique(beefDat$serotype[which(beefDat$ofconcern==1)]) # these are your beef seros of concern
+
+# very different list from using the overall meat decision rule
+
+### feed output into decision tree ###
+
+dtree <- rpart(cluster ~ nOutBeef + nIllBeef + nHospBeef, data=beefDat)
+
+# plot the tree
+rpart.plot(dtree) # only rule is was there more than one outbreak
+
+# examine the tree
+printcp(dtree)
+plotcp(dtree) 
+
+# variable importance
+dtree$variable.importance # illnesses and outbreaks have identical importance
+
+# can we re-predict the dataset?
+beefDat$prediction <- predict(dtree, data=beefDat, type="class")
+
+table(beefDat$cluster, beefDat$prediction) # its nearly perfect
+
+# decision rule: classes 2 and 3 SoC:
+# more than one outbreaks per serotype-year -> of concern 
+
+```
+
+## chicken
+
+
+```{r chicken AGNES}
+
+### prepare data ###
+
+chickDat <- propDatDate %>% 
+  dplyr::select(serotype, yearfirstill, nOutChicken, nIllChicken, nHospChicken) #%>% # select training vars
+ # filter(serotype!="Enteritidis") # mask ent to see what happens
+clustDat <- as.data.frame(chickDat) # convert to dataframe for rownames
+rownames(clustDat) <- paste(clustDat$serotype, clustDat$yearfirstill, sep="-") # so serotypes show up on the tree
+clustDat <- scale(clustDat[,-c(1:2)]) # scale and remove serotype and year cols
+
+### run the analysis ###
+
+# test a few diff methods (all euclidean distance)
+methods <- c("average", "single", "complete", "ward")
+names(methods) <- c("average", "single", "complete", "ward")
+ac <- function(x){ agnes(clustDat, method=x)$ac }
+map_dbl(methods, ac) # closer to 1 means stronger clustering - ward method is strongest
+
+hc1 <- agnes(clustDat, method="ward") # do the analysis
+
+pltree(hc1, cex=0.6, hang=-1) # plot it
+
+### identify clusters ###
+
+fviz_nbclust(clustDat, FUN=hcut, method="wss") # elbow plot to see how many clusters - 2-3 probably
+fviz_nbclust(clustDat, FUN=hcut, method="silhouette") # silhouette plot to see how many clusters - 2 clusters
+
+# lets try out k=2:k=4
+
+hc1k2 <- cutree(hc1, k=2) # k=2
+hc1k3 <- cutree(hc1, k=3) # k=3
+hc1k4 <- cutree(hc1, k=4) # k=4
+
+fviz_cluster(list(data=clustDat, cluster=hc1k2), main="K=2") 
+fviz_cluster(list(data=clustDat, cluster=hc1k3), main="chick, K=3") 
+fviz_cluster(list(data=clustDat, cluster=hc1k4), main="K=4") 
+
+# need 3 to get enough repetition of serotypes across years, k=2+3 SoC
+pltree(hc1, cex=0.6);rect.hclust(hc1, k=3, border=2:4) # visualize another way
+
+### get clusters and report out: who is of concern? ###
+
+chickDat <- chickDat %>% 
+  plyr::mutate(cluster=factor(as.character(hc1k3)),
+               highrisk = ifelse(cluster %in% c(2,3), 1, 0)) %>%
+  as.data.frame()
+nosingleschick <- chickDat %>% # identify those who appeared risky in at LEAST two years
+  group_by(serotype, highrisk) %>%
+  dplyr::summarize(n=n()) %>%
+  dplyr::filter(n > 1 & highrisk==1)
+chickDat <- chickDat %>%  # identify seros of concern
+  plyr::mutate(ofconcern=ifelse(serotype %in% unique(nosingleschick$serotype), 1, 0))
+unique(chickDat$serotype[which(chickDat$ofconcern==1)]) # these are your chicken seros of concern
+
+# very different list from using the overall meat decision rule
+
+### feed output into decision tree ###
+
+dtree <- rpart(cluster ~ nOutChicken + nIllChicken + nHospChicken, data=chickDat)
+
+# plot the tree
+rpart.plot(dtree) # only rule is was there more than three outbreaks
+
+# examine the tree
+printcp(dtree)
+plotcp(dtree) 
+
+# variable importance
+dtree$variable.importance # illnesses and outbreaks have identical importance
+
+# can we re-predict the dataset?
+chickDat$prediction <- predict(dtree, data=chickDat, type="class")
+
+table(chickDat$cluster, chickDat$prediction) # its nearly perfect
+
+# decision rule: classes 2 and 3 SoC:
+# more than one outbreaks per serotype-year -> of concern 
+
+```
+
+## pork
+
+```{r pork AGNES}
+
+### prepare data ###
+
+porkDat <- propDatDate %>% 
+  dplyr::select(serotype, yearfirstill, nOutPork, nIllPork, nHospPork) # select training vars
+clustDat <- as.data.frame(porkDat) # convert to dataframe for rownames
+rownames(clustDat) <- paste(clustDat$serotype, clustDat$yearfirstill, sep="-") # so serotypes show up on the tree
+clustDat <- scale(clustDat[,-c(1:2)]) # scale and remove serotype and year cols
+
+### run the analysis ###
+
+# test a few diff methods (all euclidean distance)
+methods <- c("average", "single", "complete", "ward")
+names(methods) <- c("average", "single", "complete", "ward")
+ac <- function(x){ agnes(clustDat, method=x)$ac }
+map_dbl(methods, ac) # closer to 1 means stronger clustering - ward method is strongest
+
+hc1 <- agnes(clustDat, method="ward") # do the analysis
+
+pltree(hc1, cex=0.6, hang=-1) # plot it
+
+### identify clusters ###
+
+fviz_nbclust(clustDat, FUN=hcut, method="wss") # elbow plot to see how many clusters - 3 probably
+fviz_nbclust(clustDat, FUN=hcut, method="silhouette") # silhouette plot to see how many clusters - 2-3 clusters
+
+# lets try out k=3:k=9
+
+hc1k2 <- cutree(hc1, k=2)
+hc1k3 <- cutree(hc1, k=3) # k=3
+hc1k4 <- cutree(hc1, k=4) 
+
+fviz_cluster(list(data=clustDat, cluster=hc1k2), main="K=2") 
+fviz_cluster(list(data=clustDat, cluster=hc1k3), main="pork, K=3") 
+fviz_cluster(list(data=clustDat, cluster=hc1k4), main="K=4") 
+
+# 4, 3:4 soc
+pltree(hc1, cex=0.6);rect.hclust(hc1, k=4, border=2:5) # visualize another way
+
+### get clusters and report out: who is of concern? ###
+
+porkDat <- porkDat %>% 
+  plyr::mutate(cluster=factor(as.character(hc1k4)),
+               highrisk = ifelse(cluster %in% c(3:4), 1, 0)) %>%
+  as.data.frame()
+nosinglespork <- porkDat %>% # identify those who appeared risky in at LEAST two years
+  group_by(serotype, highrisk) %>%
+  summarize(n=n()) %>%
+  dplyr::filter(n > 1 & highrisk==1)
+porkDat <- porkDat %>%  # identify seros of concern
+  plyr::mutate(ofconcern=ifelse(serotype %in% unique(nosinglespork$serotype), 1, 0))
+unique(porkDat$serotype[which(porkDat$ofconcern==1)]) # these are your porken seros of concern
+
+### feed output into decision tree ###
+
+dtree <- rpart(cluster ~ nOutPork + nIllPork + nHospPork, data=porkDat)
+
+# plot the tree
+rpart.plot(dtree) #groups 1+3 SoC
+# rules: 
+# if more than one outbreak, SoC (group 1,3)
+# if one outbreak, needs at least 7 hospitalizations (group 3)
+
+# examine the tree
+printcp(dtree)
+plotcp(dtree) 
+
+# variable importance
+dtree$variable.importance # no outbreaks most important barely over illnesses
+
+# can we re-predict the dataset?
+porkDat$prediction <- predict(dtree, data=porkDat, type="class")
+
+# group 2+7 = 4:9
+table(porkDat$cluster, porkDat$prediction) # nearly perfect! but hard to detect those bad outbreaks bc rare
+
+# decision rule: classes 3,4 SoC:
+# if more than one outbreak if one outbreak and least 7 hospitalizations (group 3)
+
+```
+
+## turkey
+
+```{r turkey AGNES}
+
+### prepare data ###
+
+turkDat <- propDatDate %>% 
+  dplyr::select(serotype, yearfirstill, nOutTurkey, nIllTurkey, nHospTurkey) # select training vars
+clustDat <- as.data.frame(turkDat) # convert to dataframe for rownames
+rownames(clustDat) <- paste(clustDat$serotype, clustDat$yearfirstill, sep="-") # so serotypes show up on the tree
+clustDat <- scale(clustDat[,-c(1:2)]) # scale and remove serotype and year cols
+
+### run the analysis ###
+
+# test a few diff methods (all euclidean distance)
+methods <- c("average", "single", "complete", "ward")
+names(methods) <- c("average", "single", "complete", "ward")
+ac <- function(x){ agnes(clustDat, method=x)$ac }
+map_dbl(methods, ac) # closer to 1 means stronger clustering - ward method is strongest
+
+hc1 <- agnes(clustDat, method="ward") # do the analysis
+
+pltree(hc1, cex=0.6, hang=-1) # plot it
+
+### identify clusters ###
+
+fviz_nbclust(clustDat, FUN=hcut, method="wss") # elbow plot to see how many clusters - 4 probably
+fviz_nbclust(clustDat, FUN=hcut, method="silhouette") # silhouette plot to see how many clusters - 3 clusters
+
+# lets try out k=3:k=4
+
+hc1k3 <- cutree(hc1, k=3) # k=3
+hc1k4 <- cutree(hc1, k=4) 
+
+fviz_cluster(list(data=clustDat, cluster=hc1k3), main="turk, K=3") 
+fviz_cluster(list(data=clustDat, cluster=hc1k4), main="K=4") 
+
+# 3 k=2:3 SoC
+pltree(hc1, cex=0.6);rect.hclust(hc1, k=3, border=2:9) # visualize another way
+
+### get clusters and report out: who is of concern? ###
+
+turkDat <- turkDat %>% 
+  plyr::mutate(cluster=factor(as.character(hc1k3)),
+               highrisk = ifelse(cluster %in% c(2:3), 1, 0)) %>%
+  as.data.frame()
+nosinglesturk <- turkDat %>% # identify those who appeared risky in at LEAST two years
+  group_by(serotype, highrisk) %>%
+  summarize(n=n()) %>%
+  dplyr::filter(n > 1 & highrisk==1)
+turkDat <- turkDat %>%  # identify seros of concern
+  plyr::mutate(ofconcern=ifelse(serotype %in% unique(nosinglesturk$serotype), 1, 0))
+unique(turkDat$serotype[which(turkDat$ofconcern==1)]) # these are your turken seros of concern
+
+# very different list from using the overall meat decision rule
+
+### feed output into decision tree ###
+
+dtree <- rpart(cluster ~ nOutTurkey + nIllTurkey + nHospTurkey, data=turkDat)
+
+# plot the tree
+rpart.plot(dtree) #groups 2:6 SoC
+# rules: 
+# if more than one outbreak, SoC
+
+# examine the tree
+printcp(dtree)
+plotcp(dtree) 
+
+# variable importance
+dtree$variable.importance # illnesses most important
+
+# can we re-predict the dataset?
+turkDat$prediction <- predict(dtree, data=turkDat, type="class")
+
+# group 2:6 = 3:6
+table(turkDat$cluster, turkDat$prediction) # pretty pretty good
+
+# decision rule: 
+# if more than one outbreak, SoC
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

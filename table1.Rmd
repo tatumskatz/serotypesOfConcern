@@ -1,0 +1,90 @@
+---
+title: "table1"
+author: "tatum katz"
+date: "2023-09-22"
+output: html_document
+---
+
+# this script can be run after cleaning.Rmd to generate the summary statistics for table 1
+
+# libraries
+
+```{r libraries}
+
+library(tidyverse)
+library(kableExtra)
+
+```
+
+# data
+
+```{r data}
+
+nors <- read.csv("nors.csv")
+
+```
+
+# cleaning
+
+```{r cleaning}
+
+# final list of baddies
+baddies <- c("Enteritidis", "Typhimurium", "I,4,[5],12:i:-", "Heidelberg", "Infantis", "Newport",
+             "Uganda", "Braenderup", "Muenchen", "Montevideo", "Javiana", "Reading",
+             "Dublin", "Oranienburg", "Potsdam", "Thompson", "Saintpaul",  
+             "Hadar", "Schwarzengrund", "Anatum", "Berta")
+
+commos <- data.frame(commodity = c("All", "All", "All", "Meat overall, beef, chicken, turkey", 
+                                  "Meat overall, beef, chicken, pork", "Meat overall, beef, turkey", 
+                                  "Beef, pork", "Beef, chicken", "Beef, turkey", "Meat overall, beef", 
+                                  "Meat overall, turkey", "Meat overall, turkey", "Beef", "Beef", "Beef", 
+                                  "Chicken", "Turkey", "Turkey", "Turkey", "Turkey", "Turkey"))
+
+
+# total number of illnesses from all sources in this time period
+totalMeatIll <- nors %>%
+  filter(meatSource == "meat") %>% # only meat illnesses
+  drop_na(HospitalInfo, DeathsInfo) %>%
+  summarize(totalIll=sum(EstimatedPrimary)) %>%
+  unname()
+
+# now create data table
+
+statTab <- nors %>%
+  dplyr::filter(meatSource == "meat") %>% # remove outbreaks caused by multiple CAFC sources
+  drop_na(HospitalInfo, DeathsInfo) %>%
+  group_by(serotype, meatSource) %>%
+  dplyr::filter(serotype %in% baddies) %>% # stats only for identified baddies
+  dplyr::summarize(nOut = n(), # get total number of each event
+            nIll=sum(EstimatedPrimary),
+            nHosp=sum(HospitalNum)) %>% # spread the data out first
+  replace(is.na(.),0) %>% # fill all NAs with zero because NA means 0 in this dataset and we want to calculate lots of stuff
+  dplyr::mutate(hospToIll = nHosp/nIll, # now get the remaining quantities we want
+            propMeatIll = nIll/as.numeric(totalMeatIll)) %>%
+  dplyr::select(!meatSource) %>%
+  arrange(factor(serotype, levels=baddies)) %>%
+  cbind(commos) %>%
+  dplyr::mutate(serotype = sub("Montevideo", "Montevideo*", serotype)) # see Data Limitations in the main article
+
+nrow(statTab) # 21 serotypes
+sum(statTab$propMeatIll) # list accounts for >94% of all illnesses
+
+# add a total row to the bottom
+totals <- data.frame(serotype="Total", nOut=sum(statTab$nOut), nIll=sum(statTab$nIll),
+                     nHosp=sum(statTab$nHosp), hospToIll=NA,propMeatIll=sum(statTab$propMeatIll), commodity=NA)
+statTab <- rbind(statTab, totals)
+
+```
+
+# make a beautiful kable 
+
+```{r table}
+
+statTab %>%
+  kbl(digits=2,
+      col.names=c("Serotype", "Number of Outbreaks", "Number of Illnesses", "Number of Hospitalizations",
+                  "Hospitalization: Illness Ratio", "Proportion of Total Illnesses", "Commodities")) %>%
+  kable_styling(html_font="Times New Roman", bootstrap_options = c("striped"), 
+                full_width=F, font_size=20)
+
+```

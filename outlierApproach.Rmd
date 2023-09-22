@@ -1,0 +1,178 @@
+---
+title: "outlierApproach"
+author: "tatum katz"
+date: "2023-09-22"
+output: html_document
+---
+
+# run this script after running cleaning.Rmd to perform the outlier approach to identify serotypes of greater concern
+
+# libraries
+
+```{r libraries}
+
+  library(tidyverse)
+  library(dplyr)
+  library(ggplot2)
+  library(ggpubr)
+  library(lubridate)
+  library(MASS)
+  library(pROC)
+  library(car)
+  library(cluster)
+  library(factoextra)
+  library(dendextend)
+  library(purrr)
+  library(ggrepel)
+  library(outliers)
+
+```
+
+# data
+
+```{r data}
+
+nors <- read.csv("nors.csv")
+
+```
+
+## make ratio dataset
+
+```{r}
+ratioDat <- nors %>%
+  filter(meatSource != "multiple") %>% # remove outbreaks caused by multiple CAFC sources
+  drop_na(HospitalInfo, DeathsInfo) %>%
+  group_by(serotype, meatSource, IFSACLevel4_1) %>% # level 4 gives the commodities we want
+  dplyr::summarize(nOut = n(), # get total number of each event
+            nIll=sum(EstimatedPrimary),
+            nHosp=sum(HospitalNum),nHospInfo=sum(HospitalInfo),
+            nDeath=sum(DeathsNum), nDeathInfo=sum(DeathsInfo)) %>% # spread the data out first
+  pivot_wider(id_cols=c(serotype, IFSACLevel4_1), # total number of each event, per source (meat, nonmeat, multiple, NA)
+              names_from=c(meatSource),
+              values_from=c(nOut, nIll, nHosp, nHospInfo, nDeath, nDeathInfo)) %>%
+  pivot_wider(id_cols=c(serotype), # total number of each event, per IFSAC level 4
+              names_from=c(IFSACLevel4_1),
+              values_from=grep("^n", names(.), value=T)) %>%
+  replace(is.na(.),0) %>% # fill all NAs with zero because NA means 0 in this dataset and we want to calculate lots of stuff
+  dplyr::mutate( # now calculate the values we want
+          # total trials
+         nOutTotal = sum(c_across(starts_with("nOut"))), # total number of outbreaks caused by each sero across all sources
+         nIllTotal = sum(c_across(starts_with("nIll_"))), # total number of illnesses caused by each sero across all sources
+         meanOutSize = nIllTotal/nOutTotal,
+         nHospTotal = sum(c_across(starts_with("nHosp_"))), # total number of hospitalizations caused by each sero across all sources
+          # total successes - meatSource (meat)
+         nOutMeat = sum(c_across(starts_with("nOut_meat_"))), # total number of outbreaks caused by each sero from meat sources
+         nIllMeat = sum(c_across(starts_with("nIll_meat_"))), # total number of illnesses caused by each sero from meat sources
+         nHospMeat = sum(c_across(starts_with("nHosp_meat_"))), # total number of hospitalizations caused by each sero from meat sources
+          # total successes - beef, chicken, pork, turkey
+         nOutBeef = nOut_meat_Beef, # number of outbreaks caused by each sero from beef
+         nOutChicken = nOut_meat_Chicken, # number of outbreaks caused by each sero from chicken
+         nOutPork = nOut_meat_Pork, # number of outbreaks caused by each sero from pork
+         nOutTurkey = nOut_meat_Turkey, # number of outbreaks caused by each sero from turkey
+         nIllBeef = nIll_meat_Beef, # number of ill caused by each sero from beef
+         nIllChicken = nIll_meat_Chicken, # number of ill caused by each sero from chicken
+         nIllPork = nIll_meat_Pork, # number of ill caused by each sero from pork
+         nIllTurkey = nIll_meat_Turkey, # number of ill caused by each sero from turkey
+         meanOutSizeBeef = nIll_meat_Beef/nOut_meat_Beef,
+         meanOutSizeChicken = nIll_meat_Chicken/nOut_meat_Chicken,
+         meanOutSizePork = nIll_meat_Pork/nOut_meat_Pork,
+         meanOutSizeTurkey = nIll_meat_Turkey/nOut_meat_Turkey,
+         nHospBeef = nHosp_meat_Beef, # number of hosp caused by each sero from beef
+         nHospChicken = nHosp_meat_Chicken, # number of hosp caused by each sero from chicken
+         nHospPork = nHosp_meat_Pork, # number of hosp caused by each sero from pork
+         nHospTurkey = nHosp_meat_Turkey, # number of hosp caused by each sero from turkey
+          # ratio of hospitalizations:illnesses (all meat)
+         ratioHospIllMeat = nHospMeat / nIllMeat,
+          # ratio of hospitalizations:outbreaks (beef)
+         ratioHospIllBeef = nHospBeef / nIllBeef,
+          # ratio of hospitalizations:outbreaks (chicken)
+         ratioHospIllChicken = nHospChicken / nIllChicken,
+          # ratio of hospitalizations:outbreaks (pork)
+         ratioHospIllPork = nHospPork / nIllPork,
+          # ratio of hospitalizations:outbreaks (turkey)
+         ratioHospIllTurkey = nHospTurkey / nIllTurkey,
+         ) %>%
+  dplyr::select(!grep("_", names(.), value=T)) %>% # remove necessary columns, basically any column with an _
+  dplyr::mutate(across(.cols = everything(), ~ ifelse(is.infinite(.x) | is.na(.x) | is.nan(.x), 
+                                               0, .x))) # turn all NAs and Infs to zeros (because there were 0 of these events)
+
+```
+
+# IQR outlier detection
+
+IQR: "all values lower than the first and greater than the third quartile is considered, and the difference between them and the nearest quartile divided by the IQR are calculated. values between these quartiles are given a score of 0" - no pvalues will be calculated
+
+formula: value - Q3(or Q1) / IQR  
+
+so if the outcome is greater than one, the difference between the value and the quartile value is GREATER than the IQR
+
+```{r}
+
+## meat overall ##
+# number of outbreaks
+meatIQR <- data.frame(serotype=ratioDat$serotype, 
+                      iqrOutbreaks = scores(ratioDat$meanOutSize, type = "iqr"),
+                      limOutbreaks = scores(ratioDat$meanOutSize, type = "iqr", lim=1),
+                      iqrHospToIll = scores(ratioDat$ratioHospIllMeat, type="iqr"),
+                      limHospToIll = scores(ratioDat$ratioHospIllMeat, type="iqr", lim=1))
+
+# which serotypes are outliers by iqr?
+meatIQR[which(meatIQR$limOutbreaks==T),] # for n outbreaks - blockley, carrau, heidelberg, montevideo, newport, oranienburg, poona, reading
+meatIQR[which(meatIQR$limHospToIll==T),] # for ratio - dublin, eastbourne, javiana, paratyphiB, reading, unknown
+meatIQR[which(meatIQR$limOutbreaks==T & meatIQR$limHospToIll==T),] # outliers in both - reading only
+
+## beef ##
+# create results dataframe
+beefIQR <- data.frame(serotype=ratioDat$serotype, 
+                      iqrOutbreaks = scores(ratioDat$meanOutSizeBeef, type = "iqr"), 
+                      limOutbreaks = scores(ratioDat$meanOutSizeBeef, type = "iqr", lim=1),
+                      iqrHospToIll = scores(ratioDat$ratioHospIllBeef, type="iqr"),
+                      limHospToIll = scores(ratioDat$ratioHospIllBeef, type="iqr", lim=1))
+
+# which serotypes are outliers by iqr?
+beefIQR[which(beefIQR$limOutbreaks==T),] # for n outbreaks - Braenderup, Dublin, Enteritidis, Heidelberg, I,4,[5],12:i:-, Infantis, Javiana, Montevideo, Muenchen, Newport, Oranienburg, Potsdam, Typhimurium, Uganda
+beefIQR[which(beefIQR$limHospToIll==T),] # for ratio - branderup, dublin, enteritidis, heidelberg, i4512i-, infantis, monte, muenchen, newport, oranienburg, potsdam, typhimurium, uganda
+beefIQR[which(beefIQR$limOutbreaks==T & beefIQR$limHospToIll==T),] # outliers in both -  branderup, dublin, enteritidis, heidelberg, i4512i-, infantis, monte, muenchen, newport, oranienburg, potsdam, typhimurium, uganda
+
+
+## chicken ##
+# create results dataframe
+chickenIQR <- data.frame(serotype=ratioDat$serotype, 
+                      iqrOutbreaks = scores(ratioDat$meanOutSizeChicken, type = "iqr"), 
+                      limOutbreaks = scores(ratioDat$meanOutSizeChicken, type = "iqr", lim=1), 
+                      iqrHospToIll = scores(ratioDat$ratioHospIllChicken, type="iqr"),
+                      limHospToIll = scores(ratioDat$ratioHospIllChicken, type="iqr", lim=1))
+
+# which serotypes are outliers by iqr?
+chickenIQR[which(chickenIQR$limOutbreaks==T),] # for n outbreaks - blockley, braenderup, carmel, enteritidis, heidelberg, i4512i-, infantis, javiana, montevideo, saintpaul, schwarzengrund, thompson, typhimurium
+chickenIQR[which(chickenIQR$limHospToIll==T),] # for ratio - blockley, branderup, carmel, heidelberg, i4512i-, infantis, javiana, montevideo, newport, norwich, paratyphiB, saintpaul, thompson, typhimurium
+chickenIQR[which(chickenIQR$limOutbreaks==T & chickenIQR$limHospToIll==T),] # outliers in both - blockley, braenderup, carmel, heidelberg, i4512i-, infantis, javiana, montevideo, saintpaul, thompson, typhimurum
+
+
+## pork ##
+# create results dataframe
+porkIQR <- data.frame(serotype=ratioDat$serotype, 
+                      iqrOutbreaks = scores(ratioDat$meanOutSizePork, type = "iqr"), 
+                      limOutbreaks = scores(ratioDat$meanOutSizePork, type = "iqr", lim=1), 
+                      iqrHospToIll = scores(ratioDat$ratioHospIllPork, type="iqr"),
+                      limHospToIll = scores(ratioDat$ratioHospIllPork, type="iqr", lim=1)) 
+
+# which serotypes are outliers by iqr?
+porkIQR[which(porkIQR$limOutbreaks==T),] # for n outbreaks - berta, give, i4512i-, infantis, javiana, muenchen, schwarzengrund, typhimurium
+porkIQR[which(porkIQR$limHospToIll==T),] # for ratio - berta, derby, eastbourne, i4512i-, infantis, newport, schwarzengrund, thompson, uganda, unknown
+porkIQR[which(porkIQR$limOutbreaks==T & porkIQR$limHospToIll==T),] # outliers in both - berta, i4512i-, infantis, schwarzengrund
+
+## turkey ##
+# create results dataframe
+turkeyIQR <- data.frame(serotype=ratioDat$serotype, 
+                        iqrOutbreaks = scores(ratioDat$meanOutSizeTurkey, type = "iqr"), 
+                        limOutbreaks = scores(ratioDat$meanOutSizeTurkey, type = "iqr", lim=1), 
+                        iqrHospToIll = scores(ratioDat$ratioHospIllTurkey, type="iqr"),
+                        limHospToIll = scores(ratioDat$ratioHospIllTurkey, type="iqr", lim=1))
+
+# which serotypes are outliers by iqr?
+turkeyIQR[which(turkeyIQR$limOutbreaks==T),] # for n outbreaks - anatum, berta, braenderup, enteritidis, hadar, heidelberg, i4512i-, javiana, muenchen, newport, reading, saintpaul, schwarzengrund, typhimurium
+turkeyIQR[which(turkeyIQR$limHospToIll==T),] # for ratio - anatum, berta, enteritidis, hadar, heidelberg, javiana, muenchen, newport, reading, saintpaul, schwarzengrund, typhimurium
+turkeyIQR[which(turkeyIQR$limOutbreaks==T & turkeyIQR$limHospToIll==T),] # outliers in both - anatum, berta, enteritidis, hadar, heidelberg, javiana, muenchen, newport, reading, saintpaul, schwarzengrund, typhimurium
+
+```
