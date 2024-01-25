@@ -171,6 +171,19 @@ table(meatDat$cluster, meatDat$prediction) # its nearly perfect
 # decision rule: classes 2 and 3 SoC:
 # at least two outbreaks
 
+### other outputs for supplementary materials ###
+
+meatAgCoef <- map_dbl(methods, ac) # agglomerative coefficients
+
+meatk2 <- fviz_cluster(list(data=clustDat, cluster=hc1k2), main="Meat overall, K=2", repel=T, labelsize=3)+  # figures
+  theme_bw()+ theme(legend.position="top")
+meatk3 <- fviz_cluster(list(data=clustDat, cluster=hc1k3), main="Meat overall, K=3", repel=T, labelsize=3)+
+  theme_bw() + theme(legend.position="top")
+meatk4 <- fviz_cluster(list(data=clustDat, cluster=hc1k4), main="Meat overall, K=4", repel=T, labelsize=3)+
+  theme_bw()+ theme(legend.position="top")
+
+meatClusters <- ggarrange(meatk2, meatk3, meatk4, nrow=1, ncol=3)
+
 ```
 
 ## beef
@@ -252,6 +265,19 @@ table(beefDat$cluster, beefDat$prediction) # its nearly perfect
 
 # decision rule: classes 2 and 3 SoC:
 # more than one outbreaks per serotype-year -> of concern 
+
+### other outputs for supplementary materials ###
+
+beefAgCoef <- map_dbl(methods, ac) # agglomerative coefficient
+
+beefk2 <- fviz_cluster(list(data=clustDat, cluster=hc1k2), main="Beef, K=2", repel=T, labelsize=3)+
+  theme_bw()+ theme(legend.position="top")
+beefk3 <- fviz_cluster(list(data=clustDat, cluster=hc1k3), main="Beef, K=3", repel=T, labelsize=3)+
+  theme_bw() + theme(legend.position="top")
+beefk4 <- fviz_cluster(list(data=clustDat, cluster=hc1k4), main="Beef, K=4", repel=T, labelsize=3)+
+  theme_bw()+ theme(legend.position="top")
+
+beefClusters <- ggarrange(beefk2, beefk3, beefk4, nrow=1, ncol=3)
 
 ```
 
@@ -337,6 +363,20 @@ table(chickDat$cluster, chickDat$prediction) # its nearly perfect
 # decision rule: classes 2 and 3 SoC:
 # more than one outbreaks per serotype-year -> of concern 
 
+### other outputs for supplementary materials ###
+
+chickAgCoef <- map_dbl(methods, ac) # agglomerative coefficient
+
+chickk2 <- fviz_cluster(list(data=clustDat, cluster=hc1k2), main="Chicken, K=2", repel=T, labelsize=3)+
+  theme_bw()+ theme(legend.position="top")
+chickk3 <- fviz_cluster(list(data=clustDat, cluster=hc1k3), main="Chicken, K=3", repel=T, labelsize=3)+
+  theme_bw() + theme(legend.position="top")
+chickk4 <- fviz_cluster(list(data=clustDat, cluster=hc1k4), main="Chicken, K=4", repel=T, labelsize=3)+
+  theme_bw()+ theme(legend.position="top")
+
+chickClusters <- ggarrange(chickk2, chickk3, chickk4, nrow=1, ncol=3)
+
+
 ```
 
 ## pork
@@ -421,6 +461,19 @@ table(porkDat$cluster, porkDat$prediction) # nearly perfect! but hard to detect 
 # decision rule: classes 3,4 SoC:
 # if more than one outbreak if one outbreak and least 7 hospitalizations (group 3)
 
+### other outputs for supplementary materials ###
+
+porkAgCoef <- map_dbl(methods, ac) # agglomerative coefficient
+
+porkk2 <- fviz_cluster(list(data=clustDat, cluster=hc1k2), main="Pork, K=2", repel=T, labelsize=3)+
+  theme_bw()+ theme(legend.position="top")
+porkk3 <- fviz_cluster(list(data=clustDat, cluster=hc1k3), main="Pork, K=3", repel=T, labelsize=3)+
+  theme_bw() + theme(legend.position="top")
+porkk4 <- fviz_cluster(list(data=clustDat, cluster=hc1k4), main="Pork, K=4", repel=T, labelsize=3)+
+  theme_bw()+ theme(legend.position="top")
+
+porkClusters <- ggarrange(porkk2, porkk3, porkk4, nrow=1, ncol=3)
+
 ```
 
 ## turkey
@@ -503,6 +556,19 @@ table(turkDat$cluster, turkDat$prediction) # pretty pretty good
 
 # decision rule: 
 # if more than one outbreak, SoC
+
+### other outputs for supplementary materials ###
+
+turkAgCoef <- map_dbl(methods, ac) # agglomerative coefficient
+
+turkk3 <- fviz_cluster(list(data=clustDat, cluster=hc1k3), main="Turkey, K=3", repel=T, labelsize=3)+
+  theme_bw()+ theme(legend.position="top")
+turkk4 <- fviz_cluster(list(data=clustDat, cluster=hc1k4), main="Turkey, K=4", repel=T, labelsize=3)+
+  theme_bw() + theme(legend.position="top")
+turkk5 <- fviz_cluster(list(data=clustDat, cluster=hc1k5), main="Turkey, K=5", repel=T, labelsize=3)+
+  theme_bw()+ theme(legend.position="top")
+
+turkClusters <- ggarrange(turkk3, turkk4, turkk5, nrow=1, ncol=3)
 
 ```
 

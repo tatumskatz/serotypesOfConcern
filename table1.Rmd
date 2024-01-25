@@ -13,6 +13,7 @@ output: html_document
 
 library(tidyverse)
 library(kableExtra)
+library(here)
 
 ```
 
@@ -26,19 +27,31 @@ nors <- read.csv("nors.csv")
 
 # cleaning
 
-```{r cleaning}
+```{r}
 
-# final list of baddies
+# final list of baddies - from results of previous files
 baddies <- c("Enteritidis", "Typhimurium", "I,4,[5],12:i:-", "Heidelberg", "Infantis", "Newport",
              "Uganda", "Braenderup", "Muenchen", "Montevideo", "Javiana", "Reading",
              "Dublin", "Oranienburg", "Potsdam", "Thompson", "Saintpaul",  
              "Hadar", "Schwarzengrund", "Anatum", "Berta")
 
-commos <- data.frame(commodity = c("All", "All", "All", "Meat overall, beef, chicken, turkey", 
-                                  "Meat overall, beef, chicken, pork", "Meat overall, beef, turkey", 
-                                  "Beef, pork", "Beef, chicken", "Beef, turkey", "Meat overall, beef", 
-                                  "Meat overall, turkey", "Meat overall, turkey", "Beef", "Beef", "Beef", 
-                                  "Chicken", "Turkey", "Turkey", "Turkey", "Turkey", "Turkey"))
+# which approach identified the serotype as an SoC? - from results of previous files
+approach <- data.frame(approach = c("Both", "Both", "Both", "Both", "Both", "Both", "Both", "Outlier", "Outlier", 
+                                    "Both", "Both", "Both", "Both", "Outlier", "Outlier", "Outlier", "Both", "Both", 
+                                    "Outlier", "Outlier", "Outlier"))
+
+# for what commodities are they SoC? - from results of previous files
+commosML <- data.frame(commodityML = c("Meat overall, beef, chicken, pork, turkey", "Meat overall, beef, pork, turkey",
+                                       "Meat overall, pork, turkey", "Meat overall, turkey", "Meat overall", "Meat overall, beef",
+                                       "Beef", NA, NA, "Meat overall", "Meat overall", "Turkey", "Beef", NA, NA, NA, "Turkey", 
+                                       "Turkey", NA, NA, NA))
+
+commosOut <- data.frame(commodityOut = c("Beef, turkey", "Beef, chicken, turkey", "Beef, chicken, pork", "Beef, chicken, turkey",
+                                         "Beef, chicken, pork", "Beef, turkey", "Beef", "Beef, chicken", "Beef, turkey",
+                                         "Beef, chicken", "Chicken, turkey", "Meat overall, turkey", "Beef", "Beef", "Beef",
+                                         "Chicken", "Chicken, turkey", "Turkey", "Pork, turkey", "Turkey", "Pork, turkey"))
+
+
 
 
 # total number of illnesses from all sources in this time period
@@ -56,35 +69,40 @@ statTab <- nors %>%
   group_by(serotype, meatSource) %>%
   dplyr::filter(serotype %in% baddies) %>% # stats only for identified baddies
   dplyr::summarize(nOut = n(), # get total number of each event
-            nIll=sum(EstimatedPrimary),
-            nHosp=sum(HospitalNum)) %>% # spread the data out first
+            nIll=sum(EstimatedPrimary, na.rm=T),
+            nHosp=sum(HospitalNum, na.rm=T)) %>% # spread the data out first
   replace(is.na(.),0) %>% # fill all NAs with zero because NA means 0 in this dataset and we want to calculate lots of stuff
   dplyr::mutate(hospToIll = nHosp/nIll, # now get the remaining quantities we want
             propMeatIll = nIll/as.numeric(totalMeatIll)) %>%
   dplyr::select(!meatSource) %>%
   arrange(factor(serotype, levels=baddies)) %>%
-  cbind(commos) %>%
-  dplyr::mutate(serotype = sub("Montevideo", "Montevideo*", serotype)) # see Data Limitations in the main article
+  cbind(approach, commosML, commosOut) %>%
+  dplyr::mutate(serotype = sub("Montevideo", "Montevideo*", serotype))
 
 nrow(statTab) # 21 serotypes
-sum(statTab$propMeatIll) # list accounts for >94% of all illnesses
+sum(statTab$propMeatIll) # list accounts for 94% of all illnesses!
 
 # add a total row to the bottom
 totals <- data.frame(serotype="Total", nOut=sum(statTab$nOut), nIll=sum(statTab$nIll),
-                     nHosp=sum(statTab$nHosp), hospToIll=NA,propMeatIll=sum(statTab$propMeatIll), commodity=NA)
+                     nHosp=sum(statTab$nHosp), hospToIll=NA, propMeatIll=sum(statTab$propMeatIll), approach=NA,
+                     commodityML=NA, commodityOut=NA)
 statTab <- rbind(statTab, totals)
 
 ```
 
 # make a beautiful kable 
 
-```{r table}
+```{r}
 
 statTab %>%
   kbl(digits=2,
       col.names=c("Serotype", "Number of Outbreaks", "Number of Illnesses", "Number of Hospitalizations",
-                  "Hospitalization: Illness Ratio", "Proportion of Total Illnesses", "Commodities")) %>%
+                  "Hospitalization: Illness Ratio", "Proportion of Total Illnesses", "Identifying Approach",
+                  "Commodity (ML Approach)", "Commodity (Outlier Approach)")) %>%
   kable_styling(html_font="Times New Roman", bootstrap_options = c("striped"), 
-                full_width=F, font_size=20)
+                full_width=F, font_size=20) 
 
 ```
+
+
+

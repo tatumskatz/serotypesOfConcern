@@ -11,20 +11,21 @@ output: html_document
 
 ```{r libraries}
 
-  library(tidyverse)
-  library(dplyr)
-  library(ggplot2)
-  library(ggpubr)
-  library(lubridate)
-  library(MASS)
-  library(pROC)
-  library(car)
-  library(cluster)
-  library(factoextra)
-  library(dendextend)
-  library(purrr)
-  library(ggrepel)
-  library(outliers)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+library(lubridate)
+library(MASS)
+library(pROC)
+library(car)
+library(cluster)
+library(factoextra)
+library(dendextend)
+library(purrr)
+library(ggrepel)
+library(outliers)
+library(kableExtra)
 
 ```
 
@@ -58,7 +59,7 @@ ratioDat <- nors %>%
           # total trials
          nOutTotal = sum(c_across(starts_with("nOut"))), # total number of outbreaks caused by each sero across all sources
          nIllTotal = sum(c_across(starts_with("nIll_"))), # total number of illnesses caused by each sero across all sources
-         meanOutSize = nIllTotal/nOutTotal,
+         meanOutSize = nIllTotal/nOutTotal, # mean outbreak size
          nHospTotal = sum(c_across(starts_with("nHosp_"))), # total number of hospitalizations caused by each sero across all sources
           # total successes - meatSource (meat)
          nOutMeat = sum(c_across(starts_with("nOut_meat_"))), # total number of outbreaks caused by each sero from meat sources
@@ -117,7 +118,7 @@ meatIQR <- data.frame(serotype=ratioDat$serotype,
                       limHospToIll = scores(ratioDat$ratioHospIllMeat, type="iqr", lim=1))
 
 # which serotypes are outliers by iqr?
-meatIQR[which(meatIQR$limOutbreaks==T),] # for n outbreaks - blockley, carrau, heidelberg, montevideo, newport, oranienburg, poona, reading
+meatIQR[which(meatIQR$limOutbreaks==T),] # for outbreak size - blockley carrau heidelberg montevideo newport oranienburg poona reading
 meatIQR[which(meatIQR$limHospToIll==T),] # for ratio - dublin, eastbourne, javiana, paratyphiB, reading, unknown
 meatIQR[which(meatIQR$limOutbreaks==T & meatIQR$limHospToIll==T),] # outliers in both - reading only
 
@@ -130,7 +131,7 @@ beefIQR <- data.frame(serotype=ratioDat$serotype,
                       limHospToIll = scores(ratioDat$ratioHospIllBeef, type="iqr", lim=1))
 
 # which serotypes are outliers by iqr?
-beefIQR[which(beefIQR$limOutbreaks==T),] # for n outbreaks - Braenderup, Dublin, Enteritidis, Heidelberg, I,4,[5],12:i:-, Infantis, Javiana, Montevideo, Muenchen, Newport, Oranienburg, Potsdam, Typhimurium, Uganda
+beefIQR[which(beefIQR$limOutbreaks==T),] # for outbreak size - Braenderup, Dublin, Enteritidis, Heidelberg, I,4,[5],12:i:-, Infantis, Javiana, Montevideo, Muenchen, Newport, Oranienburg, Potsdam, Typhimurium, Uganda
 beefIQR[which(beefIQR$limHospToIll==T),] # for ratio - branderup, dublin, enteritidis, heidelberg, i4512i-, infantis, monte, muenchen, newport, oranienburg, potsdam, typhimurium, uganda
 beefIQR[which(beefIQR$limOutbreaks==T & beefIQR$limHospToIll==T),] # outliers in both -  branderup, dublin, enteritidis, heidelberg, i4512i-, infantis, monte, muenchen, newport, oranienburg, potsdam, typhimurium, uganda
 
@@ -144,7 +145,7 @@ chickenIQR <- data.frame(serotype=ratioDat$serotype,
                       limHospToIll = scores(ratioDat$ratioHospIllChicken, type="iqr", lim=1))
 
 # which serotypes are outliers by iqr?
-chickenIQR[which(chickenIQR$limOutbreaks==T),] # for n outbreaks - blockley, braenderup, carmel, enteritidis, heidelberg, i4512i-, infantis, javiana, montevideo, saintpaul, schwarzengrund, thompson, typhimurium
+chickenIQR[which(chickenIQR$limOutbreaks==T),] # for noutbreak size - blockley, braenderup, carmel, enteritidis, heidelberg, i4512i-, infantis, javiana, montevideo, saintpaul, schwarzengrund, thompson, typhimurium
 chickenIQR[which(chickenIQR$limHospToIll==T),] # for ratio - blockley, branderup, carmel, heidelberg, i4512i-, infantis, javiana, montevideo, newport, norwich, paratyphiB, saintpaul, thompson, typhimurium
 chickenIQR[which(chickenIQR$limOutbreaks==T & chickenIQR$limHospToIll==T),] # outliers in both - blockley, braenderup, carmel, heidelberg, i4512i-, infantis, javiana, montevideo, saintpaul, thompson, typhimurum
 
@@ -158,7 +159,7 @@ porkIQR <- data.frame(serotype=ratioDat$serotype,
                       limHospToIll = scores(ratioDat$ratioHospIllPork, type="iqr", lim=1)) 
 
 # which serotypes are outliers by iqr?
-porkIQR[which(porkIQR$limOutbreaks==T),] # for n outbreaks - berta, give, i4512i-, infantis, javiana, muenchen, schwarzengrund, typhimurium
+porkIQR[which(porkIQR$limOutbreaks==T),] # for outbreak size - berta, give, i4512i-, infantis, javiana, muenchen, schwarzengrund, typhimurium
 porkIQR[which(porkIQR$limHospToIll==T),] # for ratio - berta, derby, eastbourne, i4512i-, infantis, newport, schwarzengrund, thompson, uganda, unknown
 porkIQR[which(porkIQR$limOutbreaks==T & porkIQR$limHospToIll==T),] # outliers in both - berta, i4512i-, infantis, schwarzengrund
 
@@ -174,5 +175,153 @@ turkeyIQR <- data.frame(serotype=ratioDat$serotype,
 turkeyIQR[which(turkeyIQR$limOutbreaks==T),] # for n outbreaks - anatum, berta, braenderup, enteritidis, hadar, heidelberg, i4512i-, javiana, muenchen, newport, reading, saintpaul, schwarzengrund, typhimurium
 turkeyIQR[which(turkeyIQR$limHospToIll==T),] # for ratio - anatum, berta, enteritidis, hadar, heidelberg, javiana, muenchen, newport, reading, saintpaul, schwarzengrund, typhimurium
 turkeyIQR[which(turkeyIQR$limOutbreaks==T & turkeyIQR$limHospToIll==T),] # outliers in both - anatum, berta, enteritidis, hadar, heidelberg, javiana, muenchen, newport, reading, saintpaul, schwarzengrund, typhimurium
+
+```
+
+# outputs for supplementary materials
+
+first calculate outlier cutoffs
+
+```{r}
+
+# remember score cutoff is anything greater than 1
+# find third quartile
+# find IQR
+# x < IQR + Q3
+
+meatOutCut <- unname(IQR(ratioDat$meanOutSize)+quantile(ratioDat$meanOutSize, 3/4)) # >60.60
+meatRatCut <- unname(IQR(ratioDat$ratioHospIllMeat)+quantile(ratioDat$ratioHospIllMeat, 3/4)) # >.30
+
+beefOutCut <- unname(IQR(ratioDat$meanOutSizeBeef)+quantile(ratioDat$meanOutSizeBeef, 3/4)) # >0
+beefRatCut <- unname(IQR(ratioDat$ratioHospIllBeef)+quantile(ratioDat$ratioHospIllBeef, 3/4)) # >0
+
+chickenOutCut <- unname(IQR(ratioDat$meanOutSizeChicken)+quantile(ratioDat$meanOutSizeChicken, 3/4)) # >14.5
+chickenRatCut <- unname(IQR(ratioDat$ratioHospIllChicken)+quantile(ratioDat$ratioHospIllChicken, 3/4)) # >0
+
+porkOutCut <- unname(IQR(ratioDat$meanOutSizePork)+quantile(ratioDat$meanOutSizePork, 3/4)) # >24.5
+porkRatCut <- unname(IQR(ratioDat$ratioHospIllPork)+quantile(ratioDat$ratioHospIllPork, 3/4)) # >0.15
+
+turkeyOutCut <- unname(IQR(ratioDat$meanOutSizeTurkey)+quantile(ratioDat$meanOutSizeTurkey, 3/4)) # >0
+turkeyRatCut <- unname(IQR(ratioDat$ratioHospIllTurkey)+quantile(ratioDat$ratioHospIllTurkey, 3/4)) # >0
+
+meatRules <- c(meatRatCut, meatOutCut, paste0(iqrMeat, collapse=", "))
+beefRules <- c(beefRatCut, beefOutCut, paste0(iqrBeef, collapse=", "))
+chickenRules <- c(chickenRatCut,chickenOutCut, paste0(iqrChick, collapse=", "))
+porkRules <- c(porkRatCut, porkOutCut, paste0(iqrPork, collapse=", "))
+turkeyRules <- c(turkeyRatCut, turkeyOutCut, paste0(iqrTurk, collapse=", "))
+
+rulesTab <- as.data.frame(cbind(meatRules, beefRules, chickenRules, porkRules, turkeyRules), row.names = c("Hospitalizations to Illness Ratio", "Average Number of Outbreaks", "Serotypes of Concern"))
+colnames(rulesTab) <- c("Meat Overall", "Beef", "Chicken", "Pork", "Turkey")
+
+rulesTab %>% kbl # generate the results table
+
+```
+
+make figures
+
+```{r}
+
+m <- meatIQR %>% 
+  mutate(noOutbreaks = ratioDat$nOutMeat,
+         ratioHospIll = ratioDat$ratioHospIllMeat,
+         colorcode = ifelse(limOutbreaks==T, ifelse(limHospToIll==T, "both", "outOnly"), ifelse(limHospToIll==T, "ratioOnly", "neither")),
+         label = ifelse(limOutbreaks==T | limHospToIll==T, serotype, "")) %>%
+ggplot(aes(x=noOutbreaks, y=ratioHospIll, color=colorcode))+
+  geom_point()+
+  scale_color_manual(values=c("purple", "red", "blue", "black"),
+                     breaks=c("both", "outOnly", "ratioOnly", "neither"),
+                     labels=c("Outlied in Both", "Outlied in Outbreaks", "Outlied in Ratio", "Not an Outlier"))+
+  geom_hline(yintercept=meatRatCut, color="blue")+
+  geom_vline(xintercept=meatOutCut, color="red")+
+  labs(x="Outbreaks",
+       y="Hospitalizations : Illnesses",
+       title="Meat Overall",
+       color=" ")+
+  geom_label_repel(aes(label=label), size=1.5, min.segment.length=0.1, max.overlaps=100, show.legend=F)+
+  theme_bw()+
+  theme(legend.position="none")
+
+b <- beefIQR %>% 
+  mutate(noOutbreaks = ratioDat$nOutBeef,
+         ratioHospIll = ratioDat$ratioHospIllBeef,
+         colorcode = ifelse(limOutbreaks==T, ifelse(limHospToIll==T, "both", "outOnly"), ifelse(limHospToIll==T, "ratioOnly", "neither")),
+                  label = ifelse(limOutbreaks==T | limHospToIll==T, serotype, "")) %>%
+ggplot(aes(x=noOutbreaks, y=ratioHospIll, color=colorcode))+
+  geom_point()+
+  scale_color_manual(values=c("purple", "red", "blue", "black"),
+                     breaks=c("both", "outOnly", "ratioOnly", "neither"),
+                     labels=c("Outlied in Both", "Outlied in Outbreaks", "Outlied in Ratio", "Not an Outlier"))+
+  geom_hline(yintercept=beefRatCut, color="blue")+
+  geom_vline(xintercept=beefOutCut, color="red")+
+  labs(x="Outbreaks",
+       y="Hospitalizations : Illnesses",
+       title="Beef",
+       color=" ")+
+  geom_label_repel(aes(label=label), size=1.5, max.overlaps=100, min.segment.length=0.1, show.legend=F)+
+  theme_bw()+
+  theme(legend.position="none")
+
+c <- chickenIQR %>% 
+  mutate(noOutbreaks = ratioDat$nOutChicken,
+         ratioHospIll = ratioDat$ratioHospIllChicken,
+         colorcode = ifelse(limOutbreaks==T, ifelse(limHospToIll==T, "both", "outOnly"), ifelse(limHospToIll==T, "ratioOnly", "neither")),
+         label = ifelse(limOutbreaks==T | limHospToIll==T, serotype, "")) %>%
+ggplot(aes(x=noOutbreaks, y=ratioHospIll, color=colorcode))+
+  geom_point()+
+  scale_color_manual(values=c("purple", "red", "blue", "black"),
+                     breaks=c("both", "outOnly", "ratioOnly", "neither"),
+                     labels=c("Outlied in Both", "Outlied in Outbreaks", "Outlied in Ratio", "Not an Outlier"))+
+  geom_hline(yintercept=chickenRatCut, color="blue")+
+  geom_vline(xintercept=chickenOutCut, color="red")+
+  labs(x="Outbreaks",
+       y="Hospitalizations : Illnesses",
+       title="Chicken",
+       color=" ")+
+  geom_label_repel(aes(label=label), size=1.5, min.segment.length=0.1, max.overlaps=100, show.legend=F)+
+  theme_bw()+
+  theme(legend.position="none")
+
+p <- porkIQR %>% 
+  mutate(noOutbreaks = ratioDat$nOutPork,
+         ratioHospIll = ratioDat$ratioHospIllPork,
+         colorcode = ifelse(limOutbreaks==T, ifelse(limHospToIll==T, "both", "outOnly"), ifelse(limHospToIll==T, "ratioOnly", "neither")),
+         label = ifelse(limOutbreaks==T | limHospToIll==T, serotype, "")) %>%
+ggplot(aes(x=noOutbreaks, y=ratioHospIll, color=colorcode))+
+  geom_point()+
+  scale_color_manual(values=c("purple", "red", "blue", "black"),
+                     breaks=c("both", "outOnly", "ratioOnly", "neither"),
+                     labels=c("Outlied in Both", "Outlied in Outbreaks", "Outlied in Ratio", "Not an Outlier"))+
+  geom_hline(yintercept=porkRatCut, color="blue")+
+  geom_vline(xintercept=porkOutCut, color="red")+
+  labs(x="Outbreaks",
+       y="Hospitalizations : Illnesses",
+       title="Pork",
+       color=" ")+
+  geom_label_repel(aes(label=label), size=1.5, max.overlaps=100,  min.segment.length=0.1, show.legend=F)+
+  theme_bw()
+
+t <- turkeyIQR %>% 
+  mutate(noOutbreaks = ratioDat$nOutTurkey,
+         ratioHospIll = ratioDat$ratioHospIllTurkey,
+         colorcode = ifelse(limOutbreaks==T, ifelse(limHospToIll==T, "both", "outOnly"), ifelse(limHospToIll==T, "ratioOnly", "neither")),
+         label = ifelse(limOutbreaks==T | limHospToIll==T, serotype, "")) %>%
+ggplot(aes(x=noOutbreaks, y=ratioHospIll, color=colorcode))+
+  geom_point()+
+  scale_color_manual(values=c("purple", "red", "blue", "black"),
+                     breaks=c("both", "outOnly", "ratioOnly", "neither"),
+                     labels=c("Outlied in Both", "Outlied in Outbreaks", "Outlied in Ratio", "Not an Outlier"))+
+  geom_hline(yintercept=turkeyRatCut, color="blue")+
+  geom_vline(xintercept=turkeyOutCut, color="red")+
+  labs(x="Outbreaks",
+       y="Hospitalizations : Illnesses",
+       title="Turkey",
+       color=" ")+
+  geom_label_repel(aes(label=label), size=1.5, max.overlaps=100,  min.segment.length=0.1, show.legend=F)+
+  theme_bw()+
+  theme(legend.position="none")
+
+ggarrange(m, b, c, 
+          p+theme(legend.position="none"), t, get_legend(p),
+          nrow=2, ncol=3)
 
 ```
