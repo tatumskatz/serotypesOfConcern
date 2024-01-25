@@ -16,4 +16,6 @@ Run this after cleaning.Rmd. It uses nors.csv and runs the outlier analyses.
 table1.Rmd  
 Run this after cleaning.Rmd. It will recreate Table 1 from the main article.
 
-Email tatum.katz@usda.gov with all questions.
+Email tatum.katz@usda.gov or katz.tatum@gmail.com with all questions.
+
+Last updated: 01/25/2024
