@@ -180,9 +180,15 @@ turkeyIQR[which(turkeyIQR$limOutbreaks==T & turkeyIQR$limHospToIll==T),] # outli
 
 # outputs for supplementary materials
 
-first calculate outlier cutoffs
-
 ```{r}
+
+# IQR lists
+
+iqrMeat <- meatIQR$serotype[which(meatIQR$limOutbreaks==T & meatIQR$limHospToIll==T)]
+iqrBeef <- beefIQR$serotype[which(beefIQR$limOutbreaks==T & beefIQR$limHospToIll==T)]
+iqrChick <- chickenIQR$serotype[which(chickenIQR$limOutbreaks==T & chickenIQR$limHospToIll==T)]
+iqrPork <- porkIQR$serotype[which(porkIQR$limOutbreaks==T & porkIQR$limHospToIll==T)]
+iqrTurk <- turkeyIQR$serotype[which(turkeyIQR$limOutbreaks==T & turkeyIQR$limHospToIll==T)]
 
 # remember score cutoff is anything greater than 1
 # find third quartile
