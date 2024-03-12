@@ -1,5 +1,6 @@
 # serotypesOfConcern
 All code for manuscript Identifying a List of Salmonella Serotypes of Concern to Target for Reducing Risk of Salmonellosis
+DOI: https://doi.org/10.3389/fmicb.2024.1307563
 
 KATZ_20230227_For Release.csv  
 This file is the original raw data file from the CDC NORS dataset from the request made on 1/18/2023.
@@ -18,4 +19,4 @@ Run this after cleaning.Rmd. It will recreate Table 1 from the main article.
 
 Email tatum.katz@usda.gov or katz.tatum@gmail.com with all questions.
 
-Last updated: 01/25/2024
+Last updated: 03/12/2024
