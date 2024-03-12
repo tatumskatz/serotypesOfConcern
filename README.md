@@ -1,5 +1,5 @@
 # serotypesOfConcern
-All code for manuscript Identifying a List of Salmonella Serotypes of Concern to Target for Reducing Risk of Salmonellosis
+All code for manuscript Identifying a List of Salmonella Serotypes of Concern to Target for Reducing Risk of Salmonellosis  
 DOI: https://doi.org/10.3389/fmicb.2024.1307563
 
 KATZ_20230227_For Release.csv  
